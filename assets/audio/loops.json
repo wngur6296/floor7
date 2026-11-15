@@ -1,0 +1,11 @@
+{
+ "amb_hum": 6.0,
+ "amb_drone": 12.0,
+ "amb_server": 8.0,
+ "amb_outside": 12.0,
+ "radio_static": 4.0,
+ "elev_motor": 4.0,
+ "hold_music": 22.857125,
+ "radio_song": 25.26315625,
+ "title_pad": 16.0
+}
