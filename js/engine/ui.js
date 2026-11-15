@@ -5,7 +5,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 export class UI {
   constructor() {
     this.sub = $('#sub'); this.subTxt = $('#sub .txt'); this.subWho = $('#sub .who'); this.promptEl = $('#prompt');
-    this.choicesEl = $('#choices'); this.toastEl = $('#toasts'); this.modalEl = $('#modal'); this.invEl = $('#inv');
+    this.toastEl = $('#toasts'); this.modalEl = $('#modal'); this.invEl = $('#inv');
     this.modalOpen = false; this.subScale = 1;
   }
   subtitle(text, who) {
@@ -20,16 +20,6 @@ export class UI {
     setTimeout(() => { t.classList.remove('on'); setTimeout(() => t.remove(), 600); }, 4200);
   }
   inv(items) { this.invEl.innerHTML = items.map(i => `<span>${esc(i)}</span>`).join(''); }
-  choice(opts, timeout = 9) {
-    return new Promise(res => {
-      const el = this.choicesEl; el.innerHTML = ''; el.classList.add('on');
-      const bar = document.createElement('div'); bar.className = 'cbar'; el.appendChild(bar);
-      let done = false; const fin = i => { if (done) return; done = true; el.classList.remove('on'); clearTimeout(tm); setTimeout(() => { if (!el.classList.contains('on')) el.innerHTML = ''; }, 400); res(i); };
-      opts.forEach((o, i) => { const b = document.createElement('button'); b.className = 'ch ch-' + o.type; b.innerHTML = `<i>${{ obey: '따르기', defy: '거스르기', ask: '되묻기', quiet: '침묵' }[o.type]}</i>${esc(o.text)}`; b.onclick = e => { e.stopPropagation(); fin(i); }; b.ontouchend = e => { e.stopPropagation(); e.preventDefault(); fin(i); }; el.appendChild(b); });
-      bar.style.animationDuration = timeout + 's'; const tm = setTimeout(() => fin(-1), timeout * 1000);
-      this.cancelChoice = () => fin(-2);
-    });
-  }
   // 범용 모달
   modal(html, cls = '', onClose) {
     this.closeModal(true);

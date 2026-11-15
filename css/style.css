@@ -28,15 +28,6 @@ body.touch #prompt .pk { font-size: 0; min-width: 22px; } body.touch #prompt .pk
 #sub.on { opacity: 1; transform: translate(-50%, 0); }
 #sub .txt { display: inline; padding: 6px 14px; line-height: 1.85; font-size: calc(16.5px * var(--sub)); font-weight: 500; letter-spacing: -.005em; background: rgba(8,8,7,var(--subbg)); border-radius: 6px; box-decoration-break: clone; -webkit-box-decoration-break: clone; text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 #sub .who { display: block; margin-bottom: 6px; font-size: calc(11px * var(--sub)); font-weight: 600; letter-spacing: .24em; color: var(--acc); }
-#choices { position: absolute; left: 50%; bottom: calc(5% + var(--sab)); transform: translate(-50%, 10px); display: grid; grid-template-columns: 1fr 1fr; gap: 8px; width: min(94vw, 680px); opacity: 0; transition: opacity .3s, transform .4s var(--ease); }
-#choices.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
-#choices .cbar { grid-column: 1 / -1; height: 1px; background: var(--acc); opacity: .7; transform-origin: left; animation: shrink linear forwards; }
-@keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-#choices .ch { position: relative; text-align: left; min-height: 54px; padding: 10px 14px 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: rgba(12,12,11,.7); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); font-size: 15px; line-height: 1.35; transition: background .15s, border-color .15s; }
-#choices .ch::before { content: ''; position: absolute; left: 0; top: 12px; bottom: 12px; width: 2px; border-radius: 2px; background: currentColor; opacity: .0; transition: opacity .15s; }
-#choices .ch i { display: block; font-style: normal; font-size: 10.5px; font-weight: 600; letter-spacing: .2em; margin-bottom: 3px; }
-#choices .ch-obey i { color: #a9d2a8; } #choices .ch-defy i { color: #e59a88; } #choices .ch-ask i { color: #a8c2e8; } #choices .ch-quiet i { color: #aaa69a; }
-#choices .ch:hover, #choices .ch:active, #choices .ch.sel { background: rgba(40,38,32,.82); border-color: var(--line2); } #choices .ch:hover::before, #choices .ch.sel::before { opacity: .8; color: var(--acc); }
 #inv { position: absolute; left: calc(14px + var(--sal)); top: calc(14px + var(--sat)); display: flex; gap: 6px; }
 #inv span { padding: 5px 10px; border-radius: 999px; background: rgba(12,12,11,.55); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); font-size: 12px; border: 1px solid var(--line); }
 #toasts { position: absolute; left: 50%; top: calc(14px + var(--sat)); transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; }

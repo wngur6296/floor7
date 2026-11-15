@@ -8,12 +8,13 @@ import { LINES } from '../../data/lines.js';
 import { ACHIEVEMENTS } from '../../data/achievements.js';
 import { ENDINGS } from '../../data/endings.js';
 import { COMPUTERS, MAILS, DOCS } from '../../data/docs.js';
-import { SPAWNS } from '../../data/level.js';
+import { SPAWNS, DOORS } from '../../data/level.js';
 import { STORY, REACT } from '../../data/story.js';
 import { writeSave, newRun } from './save.js';
 import { writeSlot } from './slots.js';
 import { updateTextTexture } from './proctex.js';
 import { mirrorCfg } from './props.js';
+import { VOICEMAP } from '../../data/voicemap.js';
 
 const POOL = 5; // 동시에 켜는 점광원 수 (모바일 성능)
 
@@ -86,7 +87,7 @@ export class Game {
   }
   enterRoom(room, from) {
     if (!room) return; const run = this.run; const v = (run.visits[room.id] || 0) + 1; run.visits[room.id] = v;
-    this.room = room; this.world.refresh();
+    this.cutStale(room.id); this.room = room; this.roomT = this.t; this.world.refresh(); this.prefetchAround(room.id);
     // 안개·주변광
     const f = room.fog || [0x22231f, 5, room.loopRoom ? 13 : 24]; this.fogT = f;
     this.audio.loop('amb', this.blackout ? null : room.amb || 'amb_hum');
@@ -108,6 +109,12 @@ export class Game {
     if (!handled && back) this.defy('back', null, room.id);
     else if (!handled && room.order != null && [2, 3, 5].includes(v) && !this.narr.busy) this.say(REACT.revisit[[2, 3, 5].indexOf(v)], { ifIdle: true });
   }
+  // 지금 방 + 이웃 방에서 나올 대사 음성을 미리 받아 둔다 (트리거 순간 다운로드 지연 제거)
+  prefetchAround(id) {
+    const ids = new Set(VOICEMAP['room:' + id] || []);
+    for (const d of DOORS) { const o = d.a === id ? d.b : d.b === id ? d.a : null; if (o) for (const v of (VOICEMAP['enter:' + o] || []).slice(0, 3)) ids.add(v); }
+    let n = 0; for (const v of ids) { if (n++ > 14) break; this.audio.prefetchVoice(v); }
+  }
   // ── 불순종
   tier() { const d = this.run.defy + Math.min(3, Math.floor(this.save.totalDefy / 15)); return d < 3 ? 0 : d < 6 ? 1 : d < 10 ? 2 : 3; }
   defy(kind, line, where) {
@@ -124,42 +131,96 @@ export class Game {
     return this.say(id, { interrupt: true });
   }
   // ── 내레이션
+  // 반응성 규칙 (플레이어 행동을 따라가도록):
+  //  · 줄마다 '어느 방에서 한 말인지' 기억한다. 플레이어가 그 방을 떠나면 아직 안 나온 줄은 버리고, 나오는 중인 줄은 끊는다.
+  //  · 큐에서 expire 초(기본 6초) 넘게 기다린 줄은 낡은 말이므로 버린다.
+  //  · prio: interrupt(2) > 일반(1) > ifIdle(0). 더 높은 우선순위가 오면 낮은 줄을 끊고 바로 시작한다.
+  //  · sticky: 전화·라디오·결말 연출처럼 방과 무관하게 끝까지 나와야 하는 줄.
+  //  · 음성은 미리 받아 두고(prefetch), 자막과 음성을 동시에 시작한다.
   say(ids, o = {}) {
     if (!ids) return Promise.resolve(true); ids = [].concat(ids).filter(Boolean);
-    if (o.ifIdle && this.narr.busy) return Promise.resolve(false);
+    const N = this.narr; const prio = o.prio ?? (o.interrupt ? 2 : o.ifIdle ? 0 : 1);
+    if (o.ifIdle && N.busy) return Promise.resolve(false);
     if (o.once) { ids = ids.filter(i => !this.run.said[i]); if (!ids.length) return Promise.resolve(false); }
-    const N = this.narr; N.pending = (N.pending || 0) + 1; N.busy = true;
-    if (o.interrupt) { N.token++; this.audio.stopVoice(); N.cancel?.(); N.chain = Promise.resolve(); }
-    const tok = N.token; for (const id of ids.slice(0, 4)) if (/[\p{L}\p{N}]/u.test(LINES[id] ?? "")) this.audio.prefetchVoice(id);
+    const sticky = !!(o.sticky || o.phone || this.player.frozen || this.run.flags.ended);
+    const room = o.room !== undefined ? o.room : sticky ? null : (this.room?.id || null);
+    if (o.interrupt || (N.busy && !N.sticky && (prio > (N.prio ?? 1) || (room && N.room && N.room !== room)))) this.hushNarr(); // 새 방의 말이 오면 이전 방의 말은 즉시 끊음
+    N.pending = (N.pending || 0) + 1; N.busy = true;
+    const tok = N.token, called = performance.now(), expire = o.expire ?? (sticky ? 120 : o.interrupt ? 3 : 6);
+    for (const id of ids.slice(0, 4)) if (/[\p{L}\p{N}]/u.test(LINES[id] ?? '')) this.audio.prefetchVoice(id);
     const p = N.chain.then(async () => {
-      for (const id of ids) {
+      for (let k = 0; k < ids.length; k++) {
+        const id = ids[k];
         if (tok !== N.token || !this.running) return false;
+        if (room && this.room?.id !== room) return false;                 // 플레이어가 이미 다른 방으로 갔다 → 낡은 지시는 버림
+        if (k === 0 && (performance.now() - called) / 1000 > expire) return false;            // 큐에서 너무 오래 기다림
+        if (o.valid && !o.valid()) return false;
         this.run.said[id] = (this.run.said[id] || 0) + 1;
         let txt = LINES[id] ?? id; let who = null; const m = /^@([AB])\s+/.exec(txt); if (m) { who = m[1] === 'A' ? '0425 서민지' : '관리실'; txt = txt.slice(m[0].length); if (id.startsWith('radio')) who = '라디오'; if (id === 'hold_music') who = '안내 방송'; }
         if (o.reverse) txt = [...txt].reverse().join('');
-        N.busy = true; this.ui.subtitle(txt, who);
-        const v = !/[\p{L}\p{N}]/u.test(txt) ? null : await this.audio.voice(id, { reverse: o.reverse, phone: o.phone || (who && id.startsWith('radio')), rate: o.rate });
-        const dur = v ? v.dur : Math.max(1.6, txt.length * .11);
-        await new Promise(res => { const tm = setTimeout(res, (dur * 1000 + 120) / this.ts); N.cancel = () => { clearTimeout(tm); v?.stop(); res(); }; });
+        N.busy = true; N.prio = prio; N.room = room; N.sticky = sticky;
+        const voiced = /[\p{L}\p{N}]/u.test(txt);
+        if (voiced) await Promise.race([this.audio.ready(id), new Promise(r => setTimeout(r, 900))]); // 음성이 아직 안 왔으면 최대 0.9초만 기다림
+        if (tok !== N.token || (room && this.room?.id !== room)) return false;
+        if (ids[k + 1]) this.audio.prefetchVoice(ids[k + 1]);
+        this.ui.subtitle(txt, who);
+        const v = !voiced ? null : await this.audio.voice(id, { reverse: o.reverse, phone: o.phone || (who && id.startsWith('radio')), rate: o.rate });
+        const dur = v ? v.dur : Math.max(1.6, txt.length * .1);
+        await new Promise(res => { const tm = setTimeout(res, (dur * 1000 + 60) / this.ts); N.cancel = () => { clearTimeout(tm); v?.stop(); res(); }; });
         if (tok !== N.token) return false;
-        this.ui.subtitle(null); await new Promise(r => setTimeout(r, (o.gap ?? 380) / this.ts));
+        this.ui.subtitle(null); await new Promise(r => setTimeout(r, (o.gap ?? 200) / this.ts));
       }
       return true;
-    }).finally(() => { N.pending--; if (N.pending <= 0) { N.pending = 0; N.busy = false; N.lastEnd = performance.now(); } });
+    }).finally(() => { N.pending--; if (N.pending <= 0) { N.pending = 0; N.busy = false; N.prio = null; N.sticky = false; N.lastEnd = performance.now(); } });
     N.chain = p.catch(() => { }); return p;
   }
-  async choice(promptId, opts, timeout = 9) {
-    await this.say(promptId);
-    if (!this.running) return 'quiet';
-    let i = await this.ui.choice(opts, timeout / this.ts); if (i === -2) return 'cancel';
-    const o = i < 0 ? opts.find(x => x.type === 'quiet') || { type: 'quiet' } : opts[i];
-    const run = this.run; run.stats[o.type]++;
-    if (o.type === 'ask') { this.save.totalAsk++; if (this.save.totalAsk >= 10) this.ach('ask10'); }
-    if (o.type === 'quiet' && run.stats.quiet >= 5) this.ach('quiet5');
-    if (o.type === 'defy') { run.defy++; this.save.totalDefy++; if (run.defy >= 10) this.ach('rebel10'); }
-    const L = REACT.reply[o.type]; const reply = o.reply !== undefined ? o.reply : L[(run.stats[o.type] - 1) % L.length];
-    if (reply) await this.say(reply);
-    return o.type;
+  hushNarr() { const N = this.narr; N.token++; this.audio.stopVoice(); N.cancel?.(); N.cancel = null; N.chain = Promise.resolve(); this.ui.subtitle(null); }
+  // 방을 옮기면: 이전 방에 묶인(=이제 안 맞는) 말은 즉시 끊는다
+  cutStale(roomId) { const N = this.narr; if (!(N.busy && !N.sticky && N.room && N.room !== roomId)) return; const tok = N.token, r = N.room; this.after(.3, () => { if (N.token === tok && N.busy && !N.sticky && N.room === r && this.room?.id !== r) this.hushNarr(); }); } // 문턱에서 잠깐 넘나든 건 무시 (0.3초 유예)
+  // ── 행동 선택 (선택지 UI 대신): 내레이터가 말한 뒤 window 초 동안 플레이어의 '몸짓'을 읽는다
+  //  obey  = spec.toward(지시한 곳) 쪽으로 걸어감 / spec.to 방으로 들어감
+  //  defy  = 다른 쪽으로 걸어가거나 다른 방으로 감
+  //  ask   = spec.look 을 일정 시간 바라봄, 또는 무언가를 조사함 (호기심)
+  //  quiet = 가만히 서 있음
+  async beat(promptId, spec = {}) {
+    if (promptId) { const ok = await this.say(promptId, { expire: 4 }); if (!ok && this.room?.id !== spec.room) return 'left'; }
+    if (!this.running || this.run.flags.ended) return 'none';
+    const p = this.player, room0 = this.room?.id, sx = p.pos.x, sz = p.pos.z, used0 = this.run.uses || 0, t0 = this.t, win = spec.window ?? 5;
+    let gaze = 0, moved = 0, lx = sx, lz = sz, lt = this.t; this.beatOn = spec;
+    const type = await new Promise(res => {
+      const tick = () => {
+        if (!this.running || this.run.flags.ended) return res('none');
+        const dt = this.t - lt; lt = this.t; moved += Math.hypot(p.pos.x - lx, p.pos.z - lz); lx = p.pos.x; lz = p.pos.z;
+        if (this.room?.id !== room0) return res(spec.to?.includes(this.room?.id) ? 'obey' : 'left');
+        if (spec.look && this.lookingAt(spec.look, spec.lookDeg ?? 13)) gaze += dt; else gaze = Math.max(0, gaze - dt * .5);
+        if (gaze >= (spec.gaze ?? 1.2)) return res('ask');
+        if ((this.run.uses || 0) > used0 && spec.useIsAsk !== false) return res('ask');
+        if (this.t - t0 < win) return this.after(.1, tick);
+        if (moved < .6) return res('quiet');
+        if (spec.toward) { const d0 = Math.hypot(sx - spec.toward[0], sz - spec.toward[1]), d1 = Math.hypot(p.pos.x - spec.toward[0], p.pos.z - spec.toward[1]); return res(d0 - d1 > .7 ? 'obey' : d1 - d0 > 1 ? 'defy' : 'wander'); } // 서성임은 기록하지 않음
+        res('obey');
+      };
+      this.after(.1, tick);
+    });
+    this.beatOn = null; if (type === 'none' || type === 'left' || type === 'wander') return type;
+    this.mark(type);
+    const r = spec.reply?.[type]; const L = REACT.reply[type];
+    const reply = r !== undefined ? r : L[(this.run.stats[type] - 1) % L.length];
+    if (reply && this.room?.id === room0) await this.say(reply, { expire: 2 });
+    return type;
+  }
+  // 행동 성향 기록 (순종·반항·호기심·침묵)
+  mark(type) {
+    const run = this.run; run.stats[type]++;
+    if (type === 'ask') { this.save.totalAsk++; if (this.save.totalAsk >= 10) this.ach('ask10'); }
+    if (type === 'quiet' && run.stats.quiet >= 5) this.ach('quiet5');
+    if (type === 'defy') { run.defy++; this.save.totalDefy++; if (run.defy >= 10) this.ach('rebel10'); }
+  }
+  // 시선 판정: 카메라 정면과 대상(소품 id 또는 [x,y,z]) 사이 각도
+  lookingAt(target, deg = 13) {
+    let x, y, z; if (Array.isArray(target)) [x, y, z] = target; else { const rec = this.world.props.get(target); if (!rec) return false; ({ x, y, z } = rec.cc); }
+    const c = this.camera.position; tmpV.set(x - c.x, y - c.y, z - c.z); const d = tmpV.length(); if (d > 12) return false; tmpV.divideScalar(d);
+    this.camera.getWorldDirection(tmpV3); return tmpV.dot(tmpV3) > Math.cos(deg * Math.PI / 180);
   }
   // ── 도전과제 / 결말
   ach(id) {
@@ -246,6 +307,8 @@ export class Game {
     if (!hit || !this.running) return; const G = this.G;
     if (hit.door) return this.useDoor(this.world.doors.get(hit.door));
     const rec = this.world.props.get(hit.prop); const it = rec.def.interact; const id = rec.def.id;
+    this.run.uses = (this.run.uses || 0) + 1;
+    if (['doc', 'computer', 'inspect', 'inspectWall', 'drawer'].includes(it.type) && !(this.run.peeked ||= {})[id]) { this.run.peeked[id] = true; this.mark('ask'); } // 시키지 않은 걸 들여다봄 = 호기심
     switch (it.type) {
       case 'drawer': rec.drawerOpen = !rec.drawerOpen; this.audio.sfx('drawer'); if (rec.drawerOpen) { this.run.drawers[id] = true; this.world.refresh(); } else { this.run.drawers[id] = false; setTimeout(() => this.world.refresh(), 250); } break;
       case 'fridge': rec.leafOpen = !rec.leafOpen; this.audio.sfx('door_open', { rate: 1.6, vol: .5 }); break;
@@ -311,7 +374,7 @@ export class Game {
       get S() { return g.S; }, get run() { return g.run; }, get save() { return g.save; }, get room() { return g.room; }, get player() { return g.player; }, get world() { return g.world; }, get t() { return g.t; },
       ui: g.ui, audio: g.audio,
       say: (ids, o) => g.say(ids, o), once: (ids, o) => g.say(ids, { ...o, once: true }), busy: () => g.narr.busy,
-      choice: (p, opts, t) => g.choice(p, opts, t), defy: (k, l) => g.defy(k, l), tier: () => g.tier(),
+      beat: (p, spec) => g.beat(p, spec), mark: t => g.mark(t), looking: (t, d) => g.lookingAt(t, d), defy: (k, l) => g.defy(k, l), tier: () => g.tier(),
       expect: spec => { g.expectSpec = spec ? { hit: new Set(), allow: [], ...spec } : null; }, expecting: () => g.expectSpec,
       ending: (id, o) => g.ending(id, o), ach: id => g.ach(id), flag: (k, v) => v === undefined ? g.run.flags[k] : (g.run.flags[k] = v),
       door: (id, op) => { const d = g.world.doors.get(id); if (!d) return; if (op === 'open') { g.world.setDoor(id, true); } else if (op === 'close') g.world.setDoor(id, false); else if (op === 'lock') d.locked = true; else if (op === 'unlock') d.locked = false; return d; },
@@ -339,6 +402,8 @@ export class Game {
     const modal = this.ui.modalOpen; this.input.enabled = this.running && !modal;
     // 탭 → 상호작용
     for (const tp of this.input.taps.splice(0)) { if (modal || !this.running) continue; const hit = tp.center ? this.pick() : this.pick(tp.x, tp.y); if (hit) this.use(hit); }
+    // 방에 막 들어와 내레이터가 지시를 말하는 동안(최대 3초)만 아주 살짝 느리게 → 말이 행동보다 늦지 않게
+    const N = this.narr; this.player.speedMul = (N.busy && !N.sticky && N.room === this.room?.id && this.t - (this.roomT ?? -9) < 3) ? .85 : 1;
     const mv = this.running ? this.player.update(dt, this.input) : 0;
     // 방 변화
     const R = this.world.roomAt(this.player.pos.x, this.player.pos.z);
@@ -423,4 +488,4 @@ export class Game {
     else A.up = 0;
   }
 }
-const tmpV = new THREE.Vector3(), tmpC = new THREE.Color(), tmpV2 = new THREE.Vector2();
+const tmpV = new THREE.Vector3(), tmpC = new THREE.Color(), tmpV2 = new THREE.Vector2(), tmpV3 = new THREE.Vector3();

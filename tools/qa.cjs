@@ -49,7 +49,7 @@ function endingFlows(p) {
     mirror: async () => { await go(2.5, -1.5); await go(2.5, -16); await go(6, -28, 600); await go(6, -36.5, 800); await use('chairMirror'); },
     basement: async () => { await go(2.5, -1.5); await go(2.5, -16); await go(2.5, -24); await go(2.5, -27); await use('elevPanel'); for (let i = 0; i < 3; i++) { await clickIn('#modal .ebtns button[data-b="0"]'); await p.waitForTimeout(1200); } },
     hold: async () => { await use('phoneMine'); },
-    '0426': async () => { await ev(p, () => __game.run.stats.ask = 4); await toControl(); await until(p, () => __game.room?.id === 'control' && __game.narr.busy === false && !!document.querySelector('#choices.on .ch-ask')); await clickIn('#choices .ch-ask'); },
+    '0426': async () => { await ev(p, () => __game.run.stats.ask = 4); await toControl(); await until(p, () => __game.room?.id === 'control' && !!__game.beatOn); for (let i = 0; i < 30; i++) { await ev(p, () => (() => { const g = __game, c = g.camera.position; const dx = -18 - c.x, dy = 2 - c.y, dz = -55.96 - c.z; g.player.yaw = Math.atan2(-dx, -dz); g.player.pitch = Math.atan2(dy, Math.hypot(dx, dz)); })()); await p.waitForTimeout(100); } },
     archive: async () => { await go(2.5, -1.5); await go(2.5, -16); await go(-6, -18); await go(-16, -18); await go(-17.6, -35); await use('keypad'); for (const k of ['2', '7', '4', '1', 'OK']) await clickIn(`#modal .keys button[data-k="${k}"]`); await p.waitForTimeout(1500); await go(-13, -34, 800); await use('archiveTerm'); },
     meta: async () => { ok(await ev(p, () => __game.world.doors.get('d_meta').shown), 'd_meta 문 (결말 5개 이상) 표시'); await ev(p, () => __game.world.setDoor('d_meta', true)); await p.waitForTimeout(300); await go(7, 2.5, 800); await go(11.6, 2.5, 500); },
   };

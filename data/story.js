@@ -2,7 +2,7 @@
 // 이야기 스크립트 — 이벤트 → 내레이션·선택지·결말. 엔진 코드와 분리되어 있다.
 // 이벤트: start, enter:<방>, trigger:<id>, teleport:<id>, use:<소품>, sit:<소품>, take:<소품>, door:<문>,
 //        read:<문서>, idle, circle, ceiling, defy, stand
-// G API 는 js/engine/game.js makeAPI() 참고. (say, choice, expect, defy, ending, ach, door, fx, wait, after …)
+// G API 는 js/engine/game.js makeAPI() 참고. (say, beat, expect, defy, ending, ach, door, fx, wait, after …)
 // ─────────────────────────────────────────────────────────────
 import { SLIDES, SLIDE_LINES, RADIO, LOOP_POSTERS, STAIR_FLOORS } from './docs.js';
 import { SPAWNS } from './level.js';
@@ -13,7 +13,7 @@ export const REACT = {
   defy: [['defy_t0_1', 'defy_t0_2', 'defy_t0_3'], ['defy_t1_1', 'defy_t1_2', 'defy_t1_3'], ['defy_t2_1', 'defy_t2_2', 'defy_t2_3'], ['defy_t3_1', 'defy_t3_2', 'defy_t3_3']],
   reply: { obey: ['r_obey_1', 'r_obey_2'], defy: ['r_defy_1', 'r_defy_2'], ask: ['r_ask_1', 'r_ask_2', 'r_ask_3', 'r_ask_4'], quiet: ['r_quiet_1', 'r_quiet_2'] },
 };
-const Q = (o, d, a, q = '…') => [{ type: 'obey', text: o }, { type: 'defy', text: d }, { type: 'ask', text: a }, { type: 'quiet', text: q }];
+// 선택지 UI 는 없다. 갈림길은 전부 '몸'으로 고른다: G.beat(대사, { toward, to, look, reply }) → obey/defy/ask/quiet
 
 function ringPhone(G, n) {
   if (!G.flag('ringing') || n <= 0 || G.flag('onCall')) { G.flag('ringing', false); return; }
@@ -71,7 +71,7 @@ export const STORY = {
     const s = G.save; G.loop('amb', 'amb_hum');
     await G.wait(1.4);
     let lines;
-    if (s.runs === 1) lines = ['intro_1', 'intro_2', 'intro_3'];
+    if (s.runs === 1) lines = ['intro_1', 'intro_2', 'intro_3', 'intro_3b'];
     else {
       lines = ['rintro_1'];
       if (s.prevVisit && Date.now() - s.prevVisit > 864e5) { lines.push('rintro_long'); G.ach('long_absence'); }
@@ -84,7 +84,7 @@ export const STORY = {
     G.flag('ringing', true); ringPhone(G, 9);
     await G.say(s.runs === 1 ? ['intro_4', 'phone_ignore'] : ['phone_ignore']);
     if (G.flag('left')) return;
-    await G.choice('ask_ready', Q('네, 준비됐어요', '아니요', '무슨 준비요?'));
+    if (!G.flag('onCall')) await G.say('phone_ignore2', { valid: () => !G.flag('onCall') });
     if (G.flag('left')) return;
     await G.say(s.runs === 1 ? 'intro_5' : 'rintro_go');
     G.flag('instructed', true);
@@ -112,7 +112,7 @@ export const STORY = {
     if (ringing && !G.flag('phoneDefied')) { G.flag('phoneDefied', true); await G.defy('phone', 'phone_answered'); }
     else stat.textContent = '저장된 메시지 1건';
     if (!live()) return; stat.textContent = '음성메시지 — 0425';
-    const ok = await G.say(['vm_1', 'vm_2', 'vm_3', 'vm_4'], { phone: true }); if (!live() || !ok) return;
+    const ok = await G.say(['vm_1', 'vm_2', 'vm_3', 'vm_4'], { phone: true, interrupt: true }); // 수화기를 들면 내레이션보다 전화가 먼저 if (!live() || !ok) return;
     G.ach('voicemail'); stat.textContent = '연결 대기 중…'; G.loop('phone', 'hold_music', { fade: .5 });
     await G.say('hold_music', { phone: true });
     G.after(30, () => live() && G.say('phone_hold_1'));
@@ -134,10 +134,11 @@ export const STORY = {
     G.flag('left', true); G.flag('ringing', false);
     if (e.visit === 1) {
       G.expect({ to: ['hall'], wrong: { breakroom: 'break_enter', boss: 'boss_enter', office: 'office_back', devroom: null } });
-      await G.say(['open_1', 'open_2']);
+      await G.say(['open_1', 'open_2', 'open_2b']);
       if (G.room?.id !== 'openoffice') return;
-      await G.choice('ask_where', [{ type: 'obey', text: '(정면의 문으로 간다)', reply: 'r_where_obey' }, { type: 'defy', text: '(동료들 자리를 뒤져 본다)' }, { type: 'ask', text: '다들 어디 갔어요?', reply: 'r_where_ask' }, { type: 'quiet', text: '…' }]);
-      if (G.room?.id === 'openoffice') G.say('open_3');
+      // 정면 문으로 걸어가면 순종, 동료 자리를 뒤지면(조사) 호기심, 다른 쪽으로 가면 반항, 서 있으면 침묵
+      const b = await G.beat('ask_where', { room: 'openoffice', toward: [2.5, -14], to: ['hall'], window: 5, reply: { obey: 'r_where_obey', ask: 'r_where_ask', defy: 'r_where_defy' } });
+      if (b !== 'obey' && G.room?.id === 'openoffice') G.say('open_3', { ifIdle: true });
     } else if (!e.handled && !e.back) G.say(e.visit >= 3 ? 'open_revisit3' : 'open_revisit', { ifIdle: true, once: true });
   },
   'trigger:fake_wall'(G) { if (!G.run.visits.devroom) G.once('devwall', { ifIdle: true }); },
@@ -152,7 +153,7 @@ export const STORY = {
 
   // ── 탕비실
   async 'enter:breakroom'(G, e) {
-    if (e.visit === 1) { await G.wait(e.handled ? 5 : .6); if (G.room?.id !== 'breakroom') return; await G.choice('ask_break', Q('아니요, 일하러 갈게요', '좀 쉴게요', '왜 쉬면 안 되죠?')); }
+    if (e.visit === 1) { await G.wait(e.handled ? 5 : .6); if (G.room?.id !== 'breakroom') return; await G.beat('ask_break', { room: 'breakroom', toward: [11, -4.5], to: ['openoffice'], window: 6, reply: { obey: 'r_break_obey', defy: 'r_break_defy', ask: 'r_break_ask', quiet: 'r_break_quiet' } }); }
     else if (!e.handled) G.say('break_enter2', { ifIdle: true, once: true });
   },
   'use:vending'(G) {
@@ -173,9 +174,9 @@ export const STORY = {
   async 'enter:hall'(G, e) {
     if (e.visit === 1) {
       G.expect({ to: ['westcorr'], wrong: { connector: 'wrong_right', lobby: 'wrong_middle', tunnel: 'wrong_small', openoffice: 'wrong_back_hall' } });
-      await G.say('hall_1'); if (G.room?.id !== 'hall') return;
-      await G.choice('ask_doors', Q('네', '아니요', '정답이 뭔데요?'));
-      if (G.room?.id === 'hall') G.say('hall_2');
+      await G.say(['hall_1', 'ask_doors', 'hall_2']); if (G.room?.id !== 'hall') return;
+      // 지시를 들은 뒤의 몸짓: 왼쪽 문으로 가면 순종(다음 방 대사가 이어받음), 작은 문을 바라보면 호기심, 서 있으면 침묵
+      await G.beat(null, { room: 'hall', toward: [-2, -18], to: ['westcorr'], look: [6, .6, -22], lookDeg: 9, window: 5, reply: { obey: null, defy: null, ask: 'r_doors_ask', quiet: 'r_doors_quiet' } });
     } else if (!e.handled && !G.flag('reachedMeeting')) G.say('hall_revisit', { ifIdle: true, once: true });
   },
   'trigger:hall_small_near'(G) { if (G.room?.id === 'hall') G.once('hall_small', { ifIdle: true }); },
@@ -185,9 +186,9 @@ export const STORY = {
   async 'enter:meeting'(G, e) {
     if (e.visit !== 1) return; G.flag('reachedMeeting', true);
     G.expect({ to: ['longcorr'] });
-    await G.say('meet_1'); if (G.room?.id !== 'meeting') return;
-    await G.choice('ask_agenda', Q('동의합니다', '반대합니다', '안건이 왜 저예요?'));
-    if (G.room?.id === 'meeting') G.say('meet_2');
+    await G.say(['meet_1', 'ask_agenda', 'meet_2']); if (G.room?.id !== 'meeting') return;
+    // 북쪽 문으로 가면 찬성(순종), 발표 화면을 바라보면 이의(호기심), 서 있으면 '침묵은 찬성'
+    await G.beat(null, { room: 'meeting', toward: [-18, -24], to: ['longcorr'], look: 'proj', window: 5, reply: { obey: null, defy: null, ask: 'r_agenda_ask', quiet: 'r_agenda_quiet' } });
   },
   'sit:chairMeet'(G) { if (!G.flag('meetSat')) { G.flag('meetSat', true); G.defy('sit', 'meet_sit'); } else G.say('meet_sit', { ifIdle: true }); },
   'use:proj'(G) { const i = G.run.slide = ((G.run.slide || 0) + 1) % SLIDES.length; G.setLabel('proj', { lines: SLIDES[i] }); G.sfx('click'); if (SLIDE_LINES[i]) G.say(SLIDE_LINES[i], { interrupt: !G.busy() }); },
@@ -204,7 +205,8 @@ export const STORY = {
   },
   async 'enter:archive'(G, e) {
     if (e.visit !== 1) return; await G.say('archive_1', { interrupt: true });
-    if (G.room?.id === 'archive') await G.choice('ask_archive', Q('아니요, 나갈게요', '볼 거예요', '뭐가 있는데요?'));
+    // 돌아 나가면 순종, 단말을 바라보면 호기심(단말을 쓰면 결말), 서 있으면 침묵
+    if (G.room?.id === 'archive') await G.beat('ask_archive', { room: 'archive', toward: [-17, -34], to: ['longcorr'], look: 'archiveTerm', useIsAsk: false, window: 6, reply: { obey: 'r_archive_obey', defy: null, ask: 'r_archive_ask', quiet: 'r_archive_quiet' } });
   },
   async 'use:archiveTerm'(G) {
     if (G.flag('archEnd')) return; G.flag('archEnd', true); G.doc('archive_rec'); G.sfx('copier', { rate: 1.4 });
@@ -213,15 +215,15 @@ export const STORY = {
   async 'enter:control'(G, e) {
     if (e.visit !== 1) return; G.expect(null);
     await G.say(['ctrl_1', 'ctrl_2'], { interrupt: true }); if (G.flag('ended')) return;
+    // 질문 대신 '시선': 충분히 궁금해했던(조사·응시) 사람이 질문 직후 화면 벽(=내레이터의 눈)을 오래 바라보면 0426.
     const curious = G.run.stats.ask >= 3 || (G.save.totalAsk >= 8 && G.run.stats.ask >= 1);
-    if (curious) {
-      const c = await G.choice('ask_ctrl', [{ type: 'obey', text: '네, 즐거웠어요', reply: 'r_ctrl_obey' }, { type: 'defy', text: '아니요', reply: 'r_ctrl_defy' }, { type: 'ask', text: '당신은 누구예요?', reply: null }, { type: 'quiet', text: '…' }], 12);
-      if (c === 'ask' && !G.flag('ended')) {
-        G.flag('ended', true); G.fx({ distort: .4, desat: .5 }); G.loop('amb', null, { fade: 4 });
-        await G.say(['q_who', 'q_0426_1', 'q_0426_2'], { interrupt: true }); G.silence(5); await G.wait(2.5); G.fadeColor(0xe8e2d0);
-        await G.say('q_0426_3'); G.ending('0426'); return;
-      }
-    } else await G.choice('ask_ctrl', [{ type: 'obey', text: '네, 즐거웠어요', reply: 'r_ctrl_obey' }, { type: 'defy', text: '아니요', reply: 'r_ctrl_defy' }, { type: 'ask', text: '왜 물어보세요?' }, { type: 'quiet', text: '…' }]);
+    const c = await G.beat('ask_ctrl', { room: 'control', toward: [-18, -52.7], look: 'cctv', lookDeg: 16, gaze: 1.5, useIsAsk: false, window: 6,
+      reply: { obey: 'r_ctrl_obey', defy: 'r_ctrl_defy', quiet: 'r_ctrl_quiet', ask: curious ? null : 'r_ctrl_look' } });
+    if (curious && c === 'ask' && !G.flag('ended')) {
+      G.flag('ended', true); G.fx({ distort: .4, desat: .5 }); G.loop('amb', null, { fade: 4 });
+      await G.say(['q_who', 'q_0426_1', 'q_0426_2'], { interrupt: true }); G.silence(5); await G.wait(2.5); G.fadeColor(0xe8e2d0);
+      await G.say('q_0426_3'); G.ending('0426'); return;
+    }
     if (G.flag('ended')) return;
     await G.say(['ctrl_3', 'ctrl_4']); G.flag('ctrlReady', true);
     G.after(25, () => { if (!G.flag('ended')) G.say('ctrl_wait', { ifIdle: true }); });

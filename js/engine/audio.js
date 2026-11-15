@@ -11,8 +11,8 @@ export class Audio {
     this.ambG = c.createGain(); this.ambG.connect(this.master); this.duck = c.createGain(); this.duck.connect(this.ambG);
     this.voiceG = c.createGain(); this.voiceG.connect(this.master);
     // 내레이터: 아주 짧은 '사내 방송' 잔향 + 약한 대역 제한
-    const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 110;
-    const conv = c.createConvolver(); conv.buffer = this.impulse(1.3, 3.2); const wet = c.createGain(); wet.gain.value = .16;
+    const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 60;
+    const conv = c.createConvolver(); conv.buffer = this.impulse(1.3, 3.2); const wet = c.createGain(); wet.gain.value = .07;
     this.voiceIn = c.createGain(); this.voiceIn.connect(hp); hp.connect(this.voiceG); hp.connect(conv); conv.connect(wet); wet.connect(this.voiceG);
     this.phoneIn = c.createGain(); const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = .8; this.phoneIn.connect(bp); bp.connect(this.voiceG);
     try { this.loops = await (await fetch('assets/audio/loops.json')).json(); } catch { this.loops = {}; }
@@ -29,6 +29,7 @@ export class Audio {
     this.loading.set(url, p); return p;
   }
   // 대사 음성은 필요할 때만 받고(지연 로딩), 디코딩된 버퍼는 최근 24개만 메모리에 유지 (LRU)
+  ready(id) { if (!this.ctx) return Promise.resolve(); return this.load(VOICE.dir + id + VOICE.ext); }
   prefetchVoice(id) { if (this.ctx) this.load(VOICE.dir + id + VOICE.ext).then(() => this.touchVoice(VOICE.dir + id + VOICE.ext)); }
   touchVoice(url) { const o = this.vOrder ||= []; const i = o.indexOf(url); if (i >= 0) o.splice(i, 1); o.push(url);
     while (o.length > 24) { const old = o.shift(); if (this.buf.get(old)) this.buf.delete(old); } }
@@ -62,7 +63,7 @@ export class Audio {
     let b = b0; if (o.reverse) { b = this.ctx.createBuffer(b0.numberOfChannels, b0.length, b0.sampleRate); for (let c = 0; c < b0.numberOfChannels; c++) { const s = b0.getChannelData(c), d = b.getChannelData(c); for (let i = 0, n = s.length; i < n; i++) d[i] = s[n - 1 - i]; } }
     const s = this.ctx.createBufferSource(); s.buffer = b; s.playbackRate.value = o.rate || 1;
     const g = this.ctx.createGain(); g.gain.value = o.vol ?? 1; s.connect(g); g.connect(o.phone ? this.phoneIn : this.voiceIn);
-    const t = this.ctx.currentTime; this.duck.gain.cancelScheduledValues(t); this.duck.gain.setTargetAtTime(.45, t, .15);
+    const t = this.ctx.currentTime; this.duck.gain.cancelScheduledValues(t); this.duck.gain.setTargetAtTime(.38, t, .08);
     s.start(); this.curVoice = s;
     return { dur: b.duration / (o.rate || 1), stop: () => { try { s.stop(); } catch { } }, ended: new Promise(r => s.onended = () => { if (this.curVoice === s) this.duck.gain.setTargetAtTime(1, this.ctx.currentTime, .4); r(); }) };
   }

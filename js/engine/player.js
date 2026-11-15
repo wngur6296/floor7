@@ -74,7 +74,7 @@ export class Player {
     if (this.sitting && (Math.abs(ax.x) + Math.abs(ax.y) > .5)) this.stand();
     let mv = 0;
     if (!this.sitting) {
-      const run = input.keys.has('ShiftLeft') ? 1.5 : 1; const sp = this.speed * run * (this.eyeT < 1.2 ? .55 : 1);
+      const run = input.keys.has('ShiftLeft') ? 1.5 : 1; const sp = this.speed * run * (this.eyeT < 1.2 ? .55 : 1) * (this.speedMul ?? 1);
       const s = Math.sin(this.yaw), c = Math.cos(this.yaw);
       const tx = (ax.x * c + ax.y * s) * sp, tz = (-ax.x * s + ax.y * c) * sp;
       const k = Math.min(1, dt * 10); this.vel.x += (tx - this.vel.x) * k; this.vel.y += (tz - this.vel.y) * k;

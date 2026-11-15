@@ -286,7 +286,7 @@ function fillAch() {
     return `<div class="ach ${g ? 'got' : 'lock'}"><div class="ic">${g ? '◆' : hid ? '?' : '◇'}</div><div><b>${hid ? '???' : esc(a.name)}</b><span>${hid ? '숨겨진 도전과제' : esc(a.desc)}</span>${g && g > 1e12 ? `<em>${fmtDate(g)} 달성</em>` : ''}</div></div>`; }).join('');
 }
 // ───────── 엔딩 갤러리 / 기록 ─────────
-const HINTS = { perfect: '모든 지시를 끝까지.', silence: '아무 말도 하지 않는다면?', loop: '같은 표어를 몇 번이나 보았나요.', outside: '창밖이 너무 밝습니다.', sit: '처음 자리가 제일 편합니다.', mirror: '거꾸로 들리는 목소리.', basement: '엘리베이터에는 0층이 있습니다.', idle: '아무것도 하지 않기.', hold: '전화를 끊지 마세요.', '0426': '옆자리 사람에 대해 물어보세요.', archive: '네 자리 숫자는 흩어져 있습니다.', meta: '충분히 많이 퇴근했다면.' };
+const HINTS = { perfect: '모든 지시를 끝까지.', silence: '아무 말도 하지 않는다면?', loop: '같은 표어를 몇 번이나 보았나요.', outside: '창밖이 너무 밝습니다.', sit: '처음 자리가 제일 편합니다.', mirror: '거꾸로 들리는 목소리.', basement: '엘리베이터에는 0층이 있습니다.', idle: '아무것도 하지 않기.', hold: '전화를 끊지 마세요.', '0426': '충분히 궁금해한 뒤, 관제실에서 그 목소리의 눈을 오래 바라보세요.', archive: '네 자리 숫자는 흩어져 있습니다.', meta: '충분히 많이 퇴근했다면.' };
 function fillGallery(tab = 'end') {
   const got = save.endings, n = Object.keys(got).length; $('#endCount').textContent = `${n} / ${ENDINGS.length}`; $('#endBar').style.width = pct(n / ENDINGS.length);
   for (const b of $$('#galTabs button')) { b.classList.toggle('on', b.dataset.tab === tab); b.onclick = () => { sfx('tick'); fillGallery(b.dataset.tab); setSel(b, false); }; }
@@ -297,7 +297,7 @@ function fillGallery(tab = 'end') {
   for (const b of $$('#endList button')) b.onclick = () => { const E = ENDINGS.find(x => x.id === b.dataset.e); showEnding(E, ENDINGS.indexOf(E) + 1, false, true); };
   const digits = Object.keys(save.digits || {}).length, ducks = Object.keys(save.ducks || {}).length;
   const ST = [['출근 횟수', save.runs + '회'], ['총 근무 시간', fmtTime(save.totalTime)], ['본 결말', `${n} / ${ENDINGS.length}`], ['도전과제', `${Object.keys(save.ach).length} / ${ACHIEVEMENTS.length}`],
-    ['지시를 거스른 횟수', (save.totalDefy || 0) + '회'], ['되물은 횟수', (save.totalAsk || 0) + '회'], ['찾은 오리', ducks + '마리'], ['찾은 숫자 조각', digits + ' / 4'], ['화분에 물 준 횟수', (save.plant || 0) + '회'],
+    ['지시를 거스른 횟수', (save.totalDefy || 0) + '회'], ['들여다본 횟수', (save.totalAsk || 0) + '회'], ['찾은 오리', ducks + '마리'], ['찾은 숫자 조각', digits + ' / 4'], ['화분에 물 준 횟수', (save.plant || 0) + '회'],
     ['마지막 결말', save.lastEnding ? (ENDINGS.find(e => e.id === save.lastEnding)?.name || '—') : '—'], ['마지막 출근', save.lastVisit ? fmtDate(save.lastVisit) : '—']];
   $('#statList').innerHTML = ST.map(([a, b]) => `<div class="row"><b>${a}</b><em>${esc(b)}</em></div>`).join('');
 }
