@@ -20,7 +20,14 @@ export function makeBuilders(M) {
     desk(o) { const g = G([1.4, .7]);
       B(g, 1.4, .04, .7, 'deskTop', 0, .74, 0); B(g, .04, .72, .66, 'deskLeg', -.68, .36, 0);
       B(g, .42, .66, .66, 'deskLeg', .48, .35, 0); B(g, 1.3, .4, .02, 'deskLeg', 0, .5, -.33);
-      const dr = B(g, .38, .18, .6, 'deskTop', .48, .58, .03, 'drawer'); B(dr, .14, .02, .02, 'chrome', 0, 0, .31);
+      // 서랍은 위가 열린 트레이. 속이 찬 상자면 메모·오리가 면을 뚫고 나온다.
+      const dr = new THREE.Group(); dr.name = 'drawer'; dr.position.set(.48, .58, .03); g.add(dr);
+      B(dr, .36, .012, .56, 'deskTop', 0, -.084, 0);           // 바닥
+      B(dr, .012, .16, .56, 'deskTop', -.174, -.01, 0);         // 옆
+      B(dr, .012, .16, .56, 'deskTop', .174, -.01, 0);
+      B(dr, .36, .16, .012, 'deskTop', 0, -.01, -.274);         // 뒤
+      B(dr, .38, .18, .02, 'deskTop', 0, 0, .29);               // 앞판
+      B(dr, .14, .02, .02, 'chrome', 0, 0, .31);
       return g; },
     chair(o) { const g = G([.55, .55]);
       C(g, .3, .3, .04, 'dark', 0, .03, 0, 5); C(g, .03, .03, .42, 'chrome', 0, .25, 0, 6);

@@ -23,6 +23,7 @@ export class World {
     for (const r of this.rooms.values()) this.buildRoom(r);
     for (const d of DOORS) this.buildDoor(d);
     for (const p of PROPS) this.buildProp(p);
+    this.bindDrawerContents();
     this.flush();
     this.triggers = TRIGGERS; this.teleports = TELEPORTS;
   }
@@ -225,6 +226,15 @@ export class World {
     for (const o of this.cullList || []) { const dx = o.c.x - cp.x, dz = o.c.z - cp.z; o.obj.visible = (!V || V.has(o.room)) && Math.sqrt(dx * dx + dz * dz) - o.r < far; }
     for (const rec of this.dynamicProps) { const dx = rec.cc.x - cp.x, dz = rec.cc.z - cp.z; const cul = (V && !V.has(rec.room)) || Math.sqrt(dx * dx + dz * dz) - rec.cr > far;
       if (cul !== rec.culled) { rec.culled = cul; for (const m of rec.meshes) m.layers.mask = cul ? 2 : 1; } }
+  }
+  // 서랍 속 물건은 서랍 메시에 붙여, 열리고 닫힐 때 같이 움직이게 한다 (안 그러면 책상/서랍을 뚫고 나온다)
+  bindDrawerContents() {
+    for (const rec of this.dynamicProps) {
+      const id = rec.def.inside; if (!id) continue;
+      const host = this.props.get(id); if (!host?.drawer) continue;
+      host.drawer.updateMatrixWorld(true); rec.obj.updateMatrixWorld(true);
+      host.drawer.attach(rec.obj);
+    }
   }
   // ── 조건 재평가 (방 입장 시)
   refresh() {

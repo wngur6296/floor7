@@ -328,7 +328,11 @@ export class Game {
     if (d.type === 'stair') { this.emit('door:' + d.id, { result: 'use' }); return; }
     if (d.locked) {
       if (d.type === 'keycard' && this.run.items.includes('keycard')) { d.locked = false; this.audio.sfx('beep'); this.emit('door:' + d.id, { result: 'unlock' }); }
-      else { this.audio.sfx('door_locked'); this.emit('door:' + d.id, { result: 'locked' }) || this.say(d.type === 'keycard' ? 'card_need' : 'locked', { ifIdle: true }); return; }
+      else {
+        const handled = this.emit('door:' + d.id, { result: 'locked' });
+        if (d.locked) { this.audio.sfx('door_locked'); if (!handled) this.say(d.type === 'keycard' ? 'card_need' : 'locked', { interrupt: true, expire: 3 }); return; }
+        // 핸들러가 잠금을 풀었으면 그대로 연다
+      }
     }
     const open = !d.open; this.world.setDoor(d.id, open); this.audio.sfx(open ? 'door_open' : 'door_close');
     this.emit('door:' + d.id, { result: open ? 'open' : 'close' });

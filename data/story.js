@@ -192,13 +192,13 @@ export const STORY = {
   },
   'sit:chairMeet'(G) { if (!G.flag('meetSat')) { G.flag('meetSat', true); G.defy('sit', 'meet_sit'); } else G.say('meet_sit', { ifIdle: true }); },
   'use:proj'(G) { const i = G.run.slide = ((G.run.slide || 0) + 1) % SLIDES.length; G.setLabel('proj', { lines: SLIDES[i] }); G.sfx('click'); if (SLIDE_LINES[i]) G.say(SLIDE_LINES[i], { interrupt: !G.busy() }); },
-  'enter:longcorr'(G, e) { if (e.visit === 1) { G.say('long_1'); G.expect({ to: ['control'], wrong: { archive: null } }); } },
+  'enter:longcorr'(G, e) { if (e.visit === 1) { G.say('long_1'); G.expect({ to: ['control'], wrong: { archive: null }, allow: ['off0426'] }); } },
   'trigger:long_mid'(G) { if (G.room?.id === 'longcorr') G.once('long_2', { ifIdle: false }); },
   'use:keypad'(G) {
     if (!G.flag('keypadTouched')) { G.flag('keypadTouched', true); if (G.expecting()) G.defy('keypad', 'keypad_touch'); }
     const fn = (code, cb) => {
       if (code === '2741') { cb(true); G.sfx('beep'); G.door('d_archive', 'unlock'); G.door('d_archive', 'open'); G.sfx('door_open'); setTimeout(() => G.ui.closeModal(), 700); G.say('archive_open', { interrupt: true }); }
-      else if (code === '0426') { cb(false); G.ach('code0426'); G.hush(); G.silence(4); G.after(3.5, () => G.say('keypad_0426b', { interrupt: true })); }
+      else if (code === '0426') { cb(false); G.flag('code0426', true); G.ach('code0426'); G.hush(); G.silence(4); G.after(3.5, () => G.say('keypad_0426b', { interrupt: true })); }
       else { cb(false); G.sfx('error'); G.say('keypad_wrong', { ifIdle: true }); }
     };
     fn.key = () => G.sfx('beep', { vol: .5 }); G.ui.keypad(fn);
@@ -253,7 +253,22 @@ export const STORY = {
     const L = { 1: 'loop_1', 2: ['loop_2', 'loop_4'], 3: 'loop_3', 4: 'loop_5', 5: 'loop_6', 6: 'loop_7' }[n]; if (L) G.say(L, { interrupt: true });
   },
   'enter:storage'(G, e) { G.flag('storageSeen', true); if (e.visit === 1) G.say('store_1', { interrupt: true }); },
-  'door:d_exit'(G, e) { if (e.result === 'locked') G.say('store_exit', { ifIdle: true }); if (e.result === 'unlock') G.say('store_exit_ok', { interrupt: true }); },
+  'read:note_0426'(G) { G.flag('read0426', true); },
+  'door:d_c0421'(G, e) { if (e.result === 'locked') G.say('col_0421', { interrupt: true, expire: 3 }); },
+  'door:d_c0422'(G, e) { if (e.result === 'locked') G.say('col_0422', { interrupt: true, expire: 3 }); },
+  'door:d_c0423'(G, e) { if (e.result === 'locked') G.say('col_0423', { interrupt: true, expire: 3 }); },
+  'door:d_c0424'(G, e) { if (e.result === 'locked') G.say('col_0424', { interrupt: true, expire: 3 }); },
+  'door:d_c0425'(G, e) { if (e.result === 'locked') G.say((G.run.said.vm_4 || G.save.ach.voicemail) ? 'col_0425b' : 'col_0425', { interrupt: true, expire: 3 }); },
+  'door:d_c0426'(G, e) {
+    if (e.result === 'open') { G.say('col_0426_open', { interrupt: true }); return; }
+    if (e.result !== 'locked') return;
+    const know = G.flag('read0426') || G.flag('code0426') || G.save.ach.code0426;
+    if (!know) { G.say('col_0426_locked', { interrupt: true, expire: 3 }); return; }
+    G.door('d_c0426', 'unlock'); // 잠금만 풀면 useDoor 가 이어서 연다
+  },
+  'enter:off0426'(G, e) { if (e.visit === 1) G.say(['off0426_1', 'off0426_2'], { interrupt: true }); },
+
+  'door:d_exit'(G, e) { if (e.result === 'locked') G.say('store_exit', { interrupt: true, expire: 4 }); if (e.result === 'unlock') G.say('store_exit_ok', { interrupt: true }); },
   'enter:stair'(G, e) { if (e.visit === 1) G.say('stair_1'); },
   'door:d_stair'(G) { stairDown(G); },
   'enter:outside'(G, e) { if (e.visit === 1) { G.say('out_1', { interrupt: true }); G.fx({ desat: .3, ca: .2 }); } },

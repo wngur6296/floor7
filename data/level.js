@@ -7,6 +7,22 @@
 const today = () => new Date();
 const fmtDate = (d) => [`#${d.getMonth() + 1}월`, `${d.getFullYear()}`, `#${d.getDate()}`, ['일', '월', '화', '수', '목', '금', '토'][d.getDay()] + '요일'];
 const v = (S, room) => S.run.visits[room] || 0;
+// 책상 로컬 좌표 → 월드 [x, z]. 로컬: 원점=바닥 중심, +Z=앉는 쪽(앞면), +X=앉은 사람 기준 왼쪽.
+function deskAt(desk, lx, lz) {
+  const r = (desk.r || 0) * Math.PI / 180, c = Math.cos(r), s = Math.sin(r);
+  return [desk.p[0] + lx * c + lz * s, desk.p[1] - lx * s + lz * c];
+}
+function onDesk(desk, lx, lz, extra = {}) { return { r: desk.r || 0, y: .76, ...extra, p: deskAt(desk, lx, lz) }; }
+// 서랍은 책상 로컬 (0.48, 0.58, 0.03), 안쪽 바닥 y≈0.50. lx/lz 는 책상 로컬(서랍 안이어야 함).
+function inDrawer(desk, lx, lz, extra = {}) { return { ...extra, p: deskAt(desk, lx, lz), y: extra.y ?? .50, inside: desk.id }; }
+
+const DESK_MINE = { id: 'deskMine', m: 'desk', p: [.8, 2.5], r: 90, col: true, interact: { type: 'drawer', name: '책상 서랍' } };
+const DESK_BOSS = { id: 'deskBoss', m: 'desk', p: [-10.3, -11], r: 90, col: true, interact: { type: 'drawer', name: '부장 책상 서랍' } };
+const DESK_0425 = { p: [7.7, -6.5], r: 0 };
+const DESK_0426 = { p: [-2.8, -9.6], r: 0 };
+const DESK_MIRROR = { m: 'desk', p: [7.7, -36.5], r: -90, col: true };
+const DESK_ARCHIVE = { m: 'desk', p: [-9.8, -34], r: -90, col: true };
+const DESK_OFF0426 = { m: 'desk', p: [-20.45, -43], r: 90, col: true };
 
 export const ROOMS = [
   { id: 'office', name: '0427의 사무실', box: [0, 0, 5, 5], floor: 'carpet', wall: 'wall', order: 0, amb: 'amb_hum' },
@@ -34,6 +50,7 @@ export const ROOMS = [
   { id: 'elevator', name: '엘리베이터', box: [1.6, -28, 3.4, -26], h: 2.5, floor: 'tile', wall: 'metal', ceil: 'metal', amb: 'amb_hum', light: .9 },
   { id: 'tunnel', name: '좁은 통로', box: [5.6, -34, 6.4, -22], h: 1.3, floor: 'carpet', wall: 'wall', amb: 'amb_drone', light: .45, lightGap: 4 },
   { id: 'mirror', name: '거울 사무실', box: [3.5, -39, 8.5, -34], floor: 'carpet', wall: 'wall', amb: 'amb_hum', lightColor: 0xf0fff8 },
+  { id: 'off0426', name: '0426의 사무실', box: [-21.6, -44.2, -19, -41.8], floor: 'carpet', wall: 'wall', amb: 'amb_hum', light: .45, lightColor: 0xe8e2d0 },
   { id: 'meta', name: '출구 없음', box: [5, 0, 13, 5], floor: 'tile', wall: 'wallWhite', ceil: 'wallWhite', amb: 'title_pad', light: 1.3, lightColor: 0xffffff },
 ];
 
@@ -52,7 +69,9 @@ export const DOORS = [
   { id: 'd_archive', a: 'longcorr', b: 'archive', at: [-17, -34], axis: 'z', type: 'keypad', code: '2741', sign: '기록보관소' },
   { id: 'd_control', a: 'longcorr', b: 'control', at: [-18, -46], axis: 'x', sign: '관제실' },
   // 동료들의 잠긴 문 (반대편 없음)
-  ...[['0421', -27], ['0422', -30], ['0423', -33], ['0424', -37], ['0425', -40], ['0426', -43]].map(([n, z]) => ({ id: 'd_c' + n, a: 'longcorr', b: null, at: [-19, z], axis: 'z', type: 'locked', sign: n, swing: 'a' })),
+  ...[['0421', -27], ['0422', -30], ['0423', -33], ['0424', -37], ['0425', -40]].map(([n, z]) => ({ id: 'd_c' + n, a: 'longcorr', b: null, at: [-19, z], axis: 'z', type: 'locked', sign: n, swing: 'a' })),
+  // 0426의 문: 평소엔 잠겨 있으나, 그 사람의 일지를 읽거나 키패드에 0426을 누른 뒤에 열 수 있다
+  { id: 'd_c0426', a: 'longcorr', b: 'off0426', at: [-19, -43], axis: 'z', type: 'locked', sign: '0426', swing: 'a' },
   // 무한 복도 연결부 (문짝 없는 개구부)
   { id: 'o_c0', a: 'connector', b: 'loopN0', at: [9, -19], axis: 'z', w: 2, h: 2.8, type: 'open' },
   ...[0, 1, 2].flatMap(k => { const ox = 9 + 6 * k, oz = -18 - 6 * k; return [
@@ -93,17 +112,18 @@ export const GROUPS = {
 
 export const PROPS = [
   // ── 0427 사무실
-  { id: 'deskMine', m: 'desk', p: [.8, 2.5], r: 90, col: true, interact: { type: 'drawer', name: '책상 서랍' } },
-  { id: 'pcMine', m: 'monitor', p: [.62, 2.5], y: .76, r: 90, interact: { type: 'computer', pc: 'pc_0427', name: '컴퓨터' } },
-  { m: 'keyboard', p: [.98, 2.5], y: .76, r: 90 },
-  { id: 'phoneMine', m: 'phone', p: [.7, 3.05], y: .76, r: 90, interact: { type: 'phone', name: '전화' } },
-  { m: 'nameplate', p: [1.3, 2.95], y: .76, r: 90, o: { lines: ['0427'] }, show: S => v(S, 'office') < 2 && !(S.save.runs > 1) },
-  { m: 'nameplate', p: [1.3, 2.95], y: .76, r: 90, o: { lines: ['0427 ?'] }, show: S => v(S, 'office') === 2 || (v(S, 'office') < 2 && (S.save.runs > 1)) },
-  { m: 'nameplate', p: [1.3, 2.95], y: .76, r: 90, o: { lines: ['당신'] }, show: S => v(S, 'office') >= 3 },
+  DESK_MINE,
+  { id: 'pcMine', m: 'monitor', ...onDesk(DESK_MINE, 0, -.18), interact: { type: 'computer', pc: 'pc_0427', name: '컴퓨터' } },
+  { m: 'keyboard', ...onDesk(DESK_MINE, 0, .18) },
+  { id: 'phoneMine', m: 'phone', ...onDesk(DESK_MINE, -.55, -.08), interact: { type: 'phone', name: '전화' } },
+  // 명패는 앞쪽 가장자리 안쪽(lz=0.28). 예전 좌표는 lz=0.50 이라 책상 앞으로 15cm 떠 있었다.
+  { m: 'nameplate', ...onDesk(DESK_MINE, -.48, .28, { o: { lines: ['0427'] }, show: S => v(S, 'office') < 2 && !(S.save.runs > 1) }) },
+  { m: 'nameplate', ...onDesk(DESK_MINE, -.48, .28, { o: { lines: ['0427 ?'] }, show: S => v(S, 'office') === 2 || (v(S, 'office') < 2 && (S.save.runs > 1)) }) },
+  { m: 'nameplate', ...onDesk(DESK_MINE, -.48, .28, { o: { lines: ['당신'] }, show: S => v(S, 'office') >= 3 }) },
   { id: 'chairMine', m: 'chair', p: [1.65, 2.5], r: -90, col: true, interact: { type: 'sit', name: '내 의자' }, show: S => v(S, 'office') < 2 },
   { id: 'chairMine2', m: 'chair', p: [2.4, 3.6], r: 0, col: true, interact: { type: 'sit', name: '내 의자 (누가 옮겼다)' }, show: S => v(S, 'office') >= 2 },
-  { id: 'duck1', m: 'duck', p: [1.12, 2.02], y: .62, inside: 'deskMine', interact: { type: 'duck', name: '고무 오리' } },
-  { id: 'memoDrawer', m: 'paper', p: [1.05, 1.9], y: .6, r: 20, inside: 'deskMine', interact: { type: 'doc', doc: 'memo_drawer', name: '메모' } },
+  { id: 'duck1', m: 'duck', ...inDrawer(DESK_MINE, .36, .18, { r: 25, interact: { type: 'duck', name: '고무 오리' } }) },
+  { id: 'memoDrawer', m: 'paper', ...inDrawer(DESK_MINE, .54, .16, { r: 8, interact: { type: 'doc', doc: 'memo_drawer', name: '메모' } }) },
   { id: 'calendar', m: 'calendar', p: [4.99, 2.2], y: 1.55, r: -90, o: () => ({ lines: fmtDate(today()) }), interact: { type: 'inspectWall', name: '달력', line: 'calendar_look', ach: 'calendar' }, show: S => v(S, 'office') < 2 },
   { id: 'calendar2', m: 'calendar', p: [4.99, 2.2], y: 1.55, r: -90, o: () => { const d = today(); d.setDate(d.getDate() + 1); return { lines: fmtDate(d), band: '#333' }; }, interact: { type: 'inspectWall', name: '달력', line: 'calendar_look2', ach: 'calendar' }, show: S => v(S, 'office') >= 2 },
   { id: 'clockOffice', m: 'clock', p: [2.5, .02], y: 2.4, r: 0, clock: S => v(S, 'office') >= 3 ? 'stop' : v(S, 'office') >= 2 ? 'back' : 'real', interact: { type: 'inspectWall', name: '시계', line: S => v(S, 'office') >= 2 ? 'clock_back' : null } },
@@ -114,15 +134,15 @@ export const PROPS = [
   { m: 'trash', p: [.3, 4.5] },
   { id: 'posterOffice', m: 'poster', p: [2.5, 4.99], y: 1.6, r: 180, o: { lines: ['#오늘의 표어', '', '지시는', '당신을 위한 것입니다'] }, show: S => v(S, 'office') < 2 },
   { m: 'poster', p: [2.5, 4.99], y: 1.6, r: 180, o: { lines: ['#오늘의 표어', '', '당신은', '지시를 위한 것입니다'] }, show: S => v(S, 'office') >= 2 },
-  { m: 'mug', p: [1.0, 2.05], y: .76 },
+  { m: 'mug', ...onDesk(DESK_MINE, .45, .20) },
 
   // ── 업무실
   ...cubicles,
-  { id: 'pc0425', m: 'monitor', p: [7.7, -6.68], y: .76, o: { text: ['정연 인트라넷', '', '로그인 됨: 0425'] }, interact: { type: 'computer', pc: 'pc_0425', name: '0425의 컴퓨터' } },
-  { m: 'nameplate', p: [8.15, -6.3], y: .76, o: { lines: ['0425 서민지'] } },
-  { id: 'note0425', m: 'paper', p: [7.3, -6.3], y: .765, r: -12, interact: { type: 'doc', doc: 'note_0425', name: '포스트잇' } },
-  { m: 'nameplate', p: [-2.35, -9.2], y: .76, o: { lines: ['0426 박정우'] } },
-  { id: 'note0426', m: 'paper', p: [-3.2, -9.3], y: .765, r: 8, interact: { type: 'doc', doc: 'note_0426', name: '업무 일지' } },
+  { id: 'pc0425', m: 'monitor', ...onDesk(DESK_0425, 0, -.18, { o: { text: ['정연 인트라넷', '', '로그인 됨: 0425'] }, interact: { type: 'computer', pc: 'pc_0425', name: '0425의 컴퓨터' } }) },
+  { m: 'nameplate', ...onDesk(DESK_0425, .45, .28, { o: { lines: ['0425 서민지'] } }) },
+  { id: 'note0425', m: 'paper', ...onDesk(DESK_0425, -.40, .20, { r: -12, interact: { type: 'doc', doc: 'note_0425', name: '포스트잇' } }) },
+  { m: 'nameplate', ...onDesk(DESK_0426, .45, .28, { o: { lines: ['0426 박정우'] } }) },
+  { id: 'note0426', m: 'paper', ...onDesk(DESK_0426, -.40, .20, { r: 8, interact: { type: 'doc', doc: 'note_0426', name: '업무 일지' } }) },
   { id: 'cat', m: 'cat', p: [-1.0, -6.1], y: .76, r: 200, show: S => { const d = new Date(); return d.getHours() % 12 === 3 && d.getMinutes() === 33; }, interact: { type: 'inspect', name: '고양이', line: 'cat_seen', ach: 'cat' } },
   { id: 'copier', m: 'copier', p: [10.4, -12.8], r: -90, col: true, interact: { type: 'copier', name: '복사기' } },
   { m: 'cabinet', p: [10.6, -8.2], r: -90, col: true }, { m: 'cabinet', p: [10.6, -0.6], r: -90, col: true },
@@ -147,12 +167,12 @@ export const PROPS = [
   { m: 'clock', p: [15, -7.98], y: 2.3, clock: () => 'real' },
 
   // ── 부장실
-  { id: 'deskBoss', m: 'desk', p: [-10.3, -11], r: 90, col: true, interact: { type: 'drawer', name: '부장 책상 서랍' } },
-  { id: 'pcBoss', m: 'monitor', p: [-10.5, -11.2], y: .76, r: 90, o: { text: ['정연 인트라넷', '', '로그인 됨: 부장'] }, interact: { type: 'computer', pc: 'pc_boss', name: '부장 컴퓨터' } },
+  DESK_BOSS,
+  { id: 'pcBoss', m: 'monitor', ...onDesk(DESK_BOSS, .20, -.20, { o: { text: ['정연 인트라넷', '', '로그인 됨: 부장'] }, interact: { type: 'computer', pc: 'pc_boss', name: '부장 컴퓨터' } }) },
   { m: 'chair', p: [-11.2, -11], r: 90, col: true, o: { mat: 'dark' } },
-  { id: 'keycard', m: 'keycard', p: [-9.98, -11.48], y: .62, inside: 'deskBoss', interact: { type: 'take', item: 'keycard', name: '카드키', line: 'boss_card', ach: 'keycard' } },
-  { id: 'memoBoss', m: 'paper', p: [-9.98, -11.6], y: .6, r: 30, inside: 'deskBoss', interact: { type: 'doc', doc: 'memo_boss', name: '메모' } },
-  { id: 'photoBoss', m: 'photo', p: [-10.5, -10.5], y: .76, r: 110, interact: { type: 'inspect', name: '가족사진', line: 'boss_photo' } },
+  { id: 'keycard', m: 'keycard', ...inDrawer(DESK_BOSS, .38, .18, { y: .505, interact: { type: 'take', item: 'keycard', name: '카드키', line: 'boss_card', ach: 'keycard' } }) },
+  { id: 'memoBoss', m: 'paper', ...inDrawer(DESK_BOSS, .55, .14, { r: 10, interact: { type: 'doc', doc: 'memo_boss', name: '메모' } }) },
+  { id: 'photoBoss', m: 'photo', ...onDesk(DESK_BOSS, -.50, -.20, { r: 110, interact: { type: 'inspect', name: '가족사진', line: 'boss_photo' } }) },
   { id: 'blinds', m: 'blinds', p: [-11.98, -11], y: 1.6, r: 90, interact: { type: 'inspectWall', name: '창문', line: 'boss_window' } },
   { m: 'cabinet', p: [-7, -13.6], col: true }, { m: 'cabinet', p: [-7.6, -13.6], col: true }, { m: 'plant', p: [-11.5, -8.5], col: true, o: { scale: 1.3 } },
   { m: 'sign', p: [-9, -13.98], y: 1.9, o: { w: 1.2, h: .3, lines: ['정연 — 정해진 그대로'], bg: '#3a2a20', fg: '#e8d8b0' } },
@@ -189,8 +209,8 @@ export const PROPS = [
 
   // ── 기록보관소
   ...[-36.6, -31.4].flatMap(z => [-15, -13.2, -11.4].map(x => ({ m: 'shelf', p: [x, z], r: z < -34 ? 0 : 180, o: { w: 1.6, box: 'folder' }, col: true }))),
-  { m: 'desk', p: [-9.8, -34], r: -90, col: true },
-  { id: 'archiveTerm', m: 'monitor', p: [-9.62, -34], y: .76, r: -90, o: { text: ['인사기록 단말', '', '조회: 0427'], bg: '#2a0f0f' }, interact: { type: 'event', ev: 'archive_term', name: '인사기록 단말기' } },
+  DESK_ARCHIVE,
+  { id: 'archiveTerm', m: 'monitor', ...onDesk(DESK_ARCHIVE, 0, -.18, { o: { text: ['인사기록 단말', '', '조회: 0427'], bg: '#2a0f0f' }, interact: { type: 'event', ev: 'archive_term', name: '인사기록 단말기' } }) },
 
   // ── 관제실
   { m: 'console', p: [-18, -52.8], o: { w: 4.4 }, col: true },
@@ -222,15 +242,22 @@ export const PROPS = [
   { id: 'elevPanel', m: 'elevpanel', p: [3.38, -26.6], y: 1.25, r: -90, interact: { type: 'elevator', name: '엘리베이터 버튼' } },
 
   // ── 거울 사무실 (0427 사무실의 좌우 반전)
-  { m: 'desk', p: [7.7, -36.5], r: -90, col: true },
-  { m: 'monitor', p: [7.88, -36.5], y: .76, r: -90, o: { text: ['넷라트인 연정', '', '7240 :됨 인그로'] } },
-  { m: 'nameplate', p: [7.2, -37.0], y: .76, r: -90, o: { lines: ['7240'] }, id: 'nameMirror' },
+  DESK_MIRROR,
+  { m: 'monitor', ...onDesk(DESK_MIRROR, 0, -.18, { o: { text: ['넷라트인 연정', '', '7240 :됨 인그로'] } }) },
+  { m: 'nameplate', ...onDesk(DESK_MIRROR, -.48, .28, { o: { lines: ['7240'] }, id: 'nameMirror' }) },
   { id: 'chairMirror', m: 'chair', p: [6.85, -36.5], r: 90, col: true, interact: { type: 'sit', name: '반대편 의자' } },
   { m: 'calendar', p: [3.51, -36.8], y: 1.55, r: 90, o: () => ({ lines: fmtDate(today()).map(s => [...s].reverse().join('')) }) },
   { m: 'clock', p: [6, -38.98], y: 2.4, clock: () => 'back' },
   { id: 'duck5', m: 'duck', p: [4.2, -38.4], y: 0, r: 200, interact: { type: 'duck', name: '고무 오리' } },
   { m: 'poster', p: [6, -34.01], y: 1.6, r: 180, o: { lines: ['#어표 의늘오', '', '은시지', '다니입 것 한위 을신당'] } },
   { m: 'plant', p: [4.1, -34.6], col: true },
+
+  // ── 0426의 사무실 (숨은 조건으로 열림)
+  DESK_OFF0426,
+  { m: 'chair', p: [-19.55, -43], r: -90, col: true },
+  { m: 'nameplate', ...onDesk(DESK_OFF0426, -.48, .28, { o: { lines: ['0426'] } }) },
+  { m: 'clock', p: [-20.4, -44.18], y: 2.3, clock: () => 'stop' },
+  { m: 'poster', p: [-19.01, -43], y: 1.6, r: -90, o: { lines: ['#이달의 사원', '', '0426 박정우', '완벽하게'], band: '#8a7a2a' } },
 
   // ── 메뉴실 (메타)
   { m: 'sign', p: [9, .02], y: 2.0, o: { w: 4, h: .9, lines: ['#새 게임'], bg: '#ffffff', fg: '#222', ph: 128 } },
